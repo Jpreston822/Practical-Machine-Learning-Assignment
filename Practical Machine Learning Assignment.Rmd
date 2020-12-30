@@ -1,0 +1,107 @@
+---
+title: "Practical Machine Learning Project"
+author: "Jenna Preston"
+date: "12/29/2020"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, we use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants in order to create a model that predicts the manner in which the participants did the exercise.  They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+## Data
+
+The training data for this project are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+## Processing the Data
+
+```{r, echo=TRUE}
+library(rpart)
+library(caret)
+library(randomForest)
+
+training <- read.csv('pml-training.csv', header = TRUE)
+testing <- read.csv('pml-testing.csv', header = TRUE)
+
+dim(training)
+dim(testing)
+```
+
+First I want to get rid of the columns that are missing and non-numeric (except for the classe column).  Then I can also remove the first 4 columns that contain user name, timestamp, etc. that are not relevant for the model.  
+
+```{r, echo=TRUE}
+training <- training[,colSums(is.na(training))==0]
+testing <- testing[,colSums(is.na(testing))==0]
+
+train_numericColumns <- unlist(lapply(training, is.numeric))
+classe <- training$classe
+training2 <- training[,train_numericColumns]
+training2$classe <- classe
+training2$classe <- as.factor(training2$classe)
+
+test_numericColumns <- unlist(lapply(testing, is.numeric))
+testing2 <- testing[,test_numericColumns]
+
+training3 <- training2[,-c(1:4)]
+testing3 <- testing2[,-c(1:4)]
+
+dim(training3)
+dim(testing3)
+```
+
+As we can see the total number of columns of data was reduced to 53 (from 160) in the training and testing data sets.
+
+Next, I will partition the training data set into a portion that is purely the training set and then a portion that will be used for testing and cross validation.  I will use 70% of the training data set as purely training data and 30% of the training data set as the validation of the model.
+
+```{r, echo=TRUE}
+set.seed(1234)
+inTrain <- createDataPartition(training3$classe, p=0.7, list= FALSE)
+training3_trainingData <- training3[inTrain,]
+training3_testingData <- training3[-inTrain,]
+dim(training3_trainingData)
+dim(training3_testingData)
+```
+
+## Creating the Model
+
+Now I will use the partition of the training data set that is purely for the training set to create the model.  For this project I will use the robust method of Random Forest.  I will use the train control with the number of folds as 5 to control the parameters for the model.  I also used parallel implementation to increase the performance of the random forest model.
+
+```{r, echo=TRUE}
+set.seed(1234)
+library(parallel)
+library(doParallel)
+cluster <- makeCluster(detectCores()-1)
+registerDoParallel(cluster)
+
+RFControl <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
+RFModel <- train(classe ~ ., data=training3_trainingData, method = "rf", trControl = RFControl)
+RFModel
+
+stopCluster(cluster)
+registerDoSEQ()
+```
+
+Now I use the portion of the training data set that I set to be the testing data as a cross-validation of the model.
+
+```{r, echo=TRUE}
+RFPrediction <- predict(RFModel, training3_testingData)
+confusionMatrix(training3_testingData$classe,RFPrediction)
+```
+
+From this cross-validation, we can see that the accuracy is 0.994 or about 99.4%.  Therefore the out-of-sample error is .006 or about 0.6%.
+
+## Using the Model to Predict Test Data
+
+Now, I can use the model in order to predict the outcomes of the testing data.
+
+```{r, echo=TRUE}
+TestingPrediction <- predict(RFModel,testing3)
+TestingPrediction
+```
+
+
